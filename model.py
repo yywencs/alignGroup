@@ -1,6 +1,9 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+from transformers import AutoTokenizer, AutoModel
+
+_GROUP_TEXT_BGE_CACHE = {}
 
 
 class PredictLayer(nn.Module):
@@ -59,7 +62,8 @@ class HyperGraphConvolution(nn.Module):
 class AlignGroup(nn.Module):
     """AlignGroup"""
     def __init__(self, num_users, num_items, num_groups, args, user_hyper_graph, item_hyper_graph,
-                 full_hyper, overlap_graph, device, cl_info, temp):
+                 full_hyper, overlap_graph, device, cl_info, temp, item_embeddings=None,
+                 user_hist_mat=None, group_recent_mat=None, group_texts=None, bge_model_path=None):
         super(AlignGroup, self).__init__()
 
         self.num_users = num_users
@@ -76,14 +80,41 @@ class AlignGroup(nn.Module):
         self.cl_weight = cl_info
 
         self.overlap_graph = overlap_graph
-        self.user_embedding = nn.Embedding(num_users, self.emb_dim)
-        self.item_embedding = nn.Embedding(num_items, self.emb_dim)
-        self.group_embedding = nn.Embedding(num_groups, self.emb_dim)
+        self.user_hist_mat = user_hist_mat
+        self.group_recent_mat = group_recent_mat
+        
+        # Item Embedding setup
+        self.pretrained_item_emb = None
+        if item_embeddings is not None:
+            self.pretrained_item_emb = item_embeddings # Expected tensor on device
+            self.item_projection = nn.Linear(item_embeddings.shape[1], self.emb_dim)
+            self.item_embedding = None 
+        else:
+            self.item_embedding = nn.Embedding(num_items, self.emb_dim)
+            nn.init.xavier_uniform_(self.item_embedding.weight)
 
-        # Embedding init
-        nn.init.xavier_uniform_(self.user_embedding.weight)
-        nn.init.xavier_uniform_(self.item_embedding.weight)
-        nn.init.xavier_uniform_(self.group_embedding.weight)
+        self.user_embedding = None
+        if self.user_hist_mat is None:
+            self.user_embedding = nn.Embedding(num_users, self.emb_dim)
+            nn.init.xavier_uniform_(self.user_embedding.weight)
+
+        self.group_embedding = None
+        if self.group_recent_mat is None and group_texts is None:
+            self.group_embedding = nn.Embedding(num_groups, self.emb_dim)
+            nn.init.xavier_uniform_(self.group_embedding.weight)
+
+        self.group_static_bge = None
+        self.group_text_projection = None
+        self.group_static_weight = None
+        if group_texts is not None and bge_model_path is not None:
+            group_static_bge = self._encode_texts_bge(group_texts, bge_model_path, device)
+            self.group_static_bge = group_static_bge
+            self.group_text_projection = nn.Linear(group_static_bge.shape[1], self.emb_dim)
+            nn.init.xavier_uniform_(self.group_text_projection.weight)
+            self.group_static_weight = nn.Parameter(torch.tensor(0.0))
+
+        if self.item_embedding is not None:
+            nn.init.xavier_uniform_(self.item_embedding.weight)
 
         # Hyper-graph Convolution
         self.hyper_graph_conv = HyperGraphConvolution(user_hyper_graph, item_hyper_graph, full_hyper, self.layers,
@@ -98,12 +129,71 @@ class AlignGroup(nn.Module):
         else:
             return self.user_forward(user_inputs, pos_item_inputs, neg_item_inputs, members, mode)
 
+    def get_item_embedding(self):
+        if self.pretrained_item_emb is not None:
+            return self.item_projection(self.pretrained_item_emb)
+        else:
+            return self.item_embedding.weight
+
+    def _encode_texts_bge(self, texts, model_path, device):
+        cache_key = (model_path, tuple(texts))
+        cached = _GROUP_TEXT_BGE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached.to(device)
+
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model = AutoModel.from_pretrained(model_path)
+        model.eval()
+        model = model.to(device)
+        batch_size = 64
+        all_embeddings = []
+        with torch.no_grad():
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                encoded = tokenizer(batch_texts, padding=True, truncation=True, return_tensors='pt', max_length=512)
+                encoded = {k: v.to(device) for k, v in encoded.items()}
+                out = model(**encoded)
+                emb = out.last_hidden_state[:, 0]
+                emb = F.normalize(emb, p=2, dim=1)
+                all_embeddings.append(emb)
+        embeddings = torch.cat(all_embeddings, dim=0).detach().cpu()
+        _GROUP_TEXT_BGE_CACHE[cache_key] = embeddings
+        return embeddings.to(device)
+
+    def _get_user_base_embedding(self, current_item_emb):
+        if self.user_hist_mat is not None:
+            return torch.sparse.mm(self.user_hist_mat, current_item_emb)
+        return self.user_embedding.weight
+
+    def _get_group_base_embedding(self, current_item_emb):
+        static_emb = None
+        if self.group_static_bge is not None and self.group_text_projection is not None:
+            static_emb = self.group_text_projection(self.group_static_bge)
+
+        dynamic_emb = None
+        if self.group_recent_mat is not None:
+            dynamic_emb = torch.sparse.mm(self.group_recent_mat, current_item_emb)
+
+        if static_emb is not None and dynamic_emb is not None:
+            w = torch.sigmoid(self.group_static_weight)
+            return w * static_emb + (1.0 - w) * dynamic_emb
+
+        if static_emb is not None:
+            return static_emb
+
+        if dynamic_emb is not None:
+            return dynamic_emb
+
+        return self.group_embedding.weight
+
     def group_forward(self, group_inputs, pos_item_inputs, neg_item_inputs, members, mode):
-        # Group-level graph computation
-        group_emb = torch.mm(self.overlap_graph, self.group_embedding.weight)
-        # group_emb = self.group_embedding.weight
+        current_item_emb = self.get_item_embedding()
+        user_base = self._get_user_base_embedding(current_item_emb)
+        group_base = self._get_group_base_embedding(current_item_emb)
+        group_emb = torch.mm(self.overlap_graph, group_base)
+        
         # Member-level graph computation
-        ui_emb, g_emb = self.hyper_graph_conv(self.user_embedding.weight, self.item_embedding.weight,
+        ui_emb, g_emb = self.hyper_graph_conv(user_base, current_item_emb,
                                                group_emb, self.num_users, self.num_items)
         u_emb, i_emb = torch.split(ui_emb, [self.num_users, self.num_items])
 
@@ -122,12 +212,12 @@ class AlignGroup(nn.Module):
             return loss, pos_prediction
 
     def get_centers(self, members, u_emb):
-        centers = torch.empty(0).to(self.device)
+        centers_list = []
         for member in members:
             embedding_member = torch.index_select(u_emb, 0, member)
             center = self.geometric_group(embedding_member)
-            centers = torch.cat((centers, torch.unsqueeze(center, dim=0)), dim=0)
-        return centers
+            centers_list.append(center)
+        return torch.stack(centers_list)
 
     def geometric_group(self, embedding_member):
         """Geometric bounding and projection for group representation"""
@@ -157,9 +247,11 @@ class AlignGroup(nn.Module):
         return torch.mean(cl_loss)
 
     def user_forward(self, user_inputs, pos_item_inputs, neg_item_inputs, members, mode):
-        u_emb = self.user_embedding(user_inputs)
-        i_emb_pos = self.item_embedding(pos_item_inputs)
-        i_emb_neg = self.item_embedding(neg_item_inputs)
+        current_item_emb = self.get_item_embedding()
+        user_base = self._get_user_base_embedding(current_item_emb)
+        u_emb = user_base[user_inputs]
+        i_emb_pos = current_item_emb[pos_item_inputs]
+        i_emb_neg = current_item_emb[neg_item_inputs]
         if self.predictor_type == "MLP":
             pos_prediction = torch.sigmoid(self.predict(u_emb * i_emb_pos))
             neg_prediction = torch.sigmoid(self.predict(u_emb * i_emb_neg))

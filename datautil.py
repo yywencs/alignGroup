@@ -20,27 +20,47 @@ def load_rating_file_to_list(filename):
 
 def load_rating_file_to_matrix(filename, num_users=None, num_items=None):
     """Return **Matrix** format user/group-item interactions"""
-    if num_users is None:
-        num_users, num_items = 0, 0
-
-    lines = open(filename, 'r').readlines()
+    rows = []
+    cols = []
+    
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+        
     for line in lines:
         contents = line.split()
-        u, i = int(contents[0]), int(contents[1])
-        num_users = max(num_users, u)
-        num_items = max(num_items, i)
-
-    mat = sp.dok_matrix((num_users + 1, num_items + 1), dtype=np.float32)
-    for line in lines:
-        contents = line.split()
-        if len(contents) > 2:
-            u, i, rating = int(contents[0]), int(contents[1]), int(contents[2])
-            if rating > 0:
-                mat[u, i] = 1.0
-        else:
+        if len(contents) >= 2:
             u, i = int(contents[0]), int(contents[1])
-            mat[u, i] = 1.0
-    return mat
+            # Check rating if exists
+            if len(contents) > 2:
+                rating = float(contents[2])
+                if rating <= 0:
+                    continue
+            
+            rows.append(u)
+            cols.append(i)
+            
+    if not rows:
+        if num_users is None: num_users = 0
+        if num_items is None: num_items = 0
+        return sp.dok_matrix((num_users + 1, num_items + 1), dtype=np.float32)
+
+    max_u = max(rows)
+    max_i = max(cols)
+    
+    if num_users is None:
+        num_users = max_u
+    else:
+        num_users = max(num_users, max_u)
+        
+    if num_items is None:
+        num_items = max_i
+    else:
+        num_items = max(num_items, max_i)
+
+    # Create COO then DOK for faster construction
+    data = np.ones(len(rows), dtype=np.float32)
+    mat = sp.coo_matrix((data, (rows, cols)), shape=(num_users + 1, num_items + 1), dtype=np.float32)
+    return mat.todok()
 
 
 def load_negative_file(filename):

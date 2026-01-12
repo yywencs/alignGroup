@@ -1,0 +1,15 @@
+INFO: = = = = = = = = = = = = = = = = = = = = 
+INFO: ('## Finishing Time:', '2025-11-23 21:18:11')
+INFO: Namespace(seed=0, dataset='Mafengwo', device='cuda:0', layers=4, emb_dim=32, num_negatives=8, topK=[1, 5, 10], epoch=100, learning_rate=0.001, batch_size=512, patience=4, predictor='MLP', loss_type='BPR', temp=[0.2, 0.4, 0.6, 0.8], cl_weight=[0.001, 0.01, 0.1])
+INFO:  #Users 5275, #Items 1513, #Groups 995
+
+INFO: ██Dataset: 	Mafengwo
+INFO: Idx = 1 / 12, cl_weight = 0.001, temp = 0.2: 
+INFO: Epoch 0, group loss: 0.68477, Cost time: 5.11s
+INFO: Epoch 0, user loss: 0.49049, Cost time: 3.28s
+INFO: [Epoch 0] Group, Hit@[1, 5, 10]: [0.23116, 0.51357, 0.63116], NDCG@[1, 5, 10]: [0.23116, 0.38234, 0.4201]
+INFO: [Epoch 0] User, Hit@[1, 5, 10]: [0.25371, 0.62714, 0.74344], NDCG@[1, 5, 10]: [0.25371, 0.45215, 0.4899]
+INFO: Epoch 1, group loss: 0.45914, Cost time: 5.22s
+INFO: Epoch 1, user loss: 0.38681, Cost time: 3.63s
+INFO: [Epoch 1] Group, Hit@[1, 5, 10]: [0.23417, 0.57286, 0.68744], NDCG@[1, 5, 10]: [0.23417, 0.41393, 0.45104]
+INFO: [Epoch 1] User, Hit@[1, 5, 10]: [0.248, 0.6203, 0.74686], NDCG@[1, 5, 10]: [0.248, 0.446, 0.48716]
