@@ -62,7 +62,7 @@ class FacebookGroupDataset(object):
         print(f"GroupItem: {self.group_train_matrix.shape} with {len(self.group_train_matrix.keys())} interactions")
 
         self.user_hist_mat = self._build_user_hist_mat(os.path.join(data_dir, "userRatingTrain.txt"))
-        self.group_recent_mat = self._build_group_recent_mat(os.path.join(data_dir, "groupRatingTrain.txt"), recent_k=self.recent_k)
+        self.group_hist_ids, self.group_hist_mask = self._build_group_histories(os.path.join(data_dir, "groupRatingTrain.txt"), hist_len=self.recent_k)
         self.group_texts = self._load_group_texts(os.path.join(data_dir, "group_list.txt"), group_profile_path)
 
         # Member-level Hyper-graph
@@ -129,9 +129,20 @@ class FacebookGroupDataset(object):
         seqs = self._load_id_item_sequences(user_train_file)
         return self._build_row_normalized_sparse(seqs, self.num_users, self.num_items, recent_k=None)
 
-    def _build_group_recent_mat(self, group_train_file, recent_k=200):
+    def _build_group_histories(self, group_train_file, hist_len=200):
         seqs = self._load_id_item_sequences(group_train_file)
-        return self._build_row_normalized_sparse(seqs, self.num_groups, self.num_items, recent_k=recent_k)
+        hist_ids = torch.zeros((self.num_groups, hist_len), dtype=torch.long)
+        hist_mask = torch.zeros((self.num_groups, hist_len), dtype=torch.float32)
+        for gid in range(self.num_groups):
+            items = seqs.get(gid, [])
+            if hist_len > 0:
+                items = items[-hist_len:]
+            if not items:
+                continue
+            use_len = min(hist_len, len(items))
+            hist_ids[gid, :use_len] = torch.tensor(items[:use_len], dtype=torch.long)
+            hist_mask[gid, :use_len] = 1.0
+        return hist_ids, hist_mask
 
     def _load_group_texts(self, group_list_path, group_profile_path=None):
         texts = [""] * self.num_groups
@@ -190,5 +201,8 @@ class FacebookGroupDataset(object):
 
     def get_group_dataloader(self, batch_size):
         groups, pos_neg_items = self.get_train_instances(self.group_train_matrix)
-        train_data = TensorDataset(torch.LongTensor(groups), torch.LongTensor(pos_neg_items))
+        group_ids = torch.LongTensor(groups)
+        hist = self.group_hist_ids[group_ids]
+        mask = self.group_hist_mask[group_ids]
+        train_data = TensorDataset(group_ids, torch.LongTensor(pos_neg_items), hist, mask)
         return DataLoader(train_data, batch_size=batch_size, shuffle=True)

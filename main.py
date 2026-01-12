@@ -39,7 +39,12 @@ def training(train_loader, epoch, type_m="group", group_member_dict=None):
     losses = []
 
     pbar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch} [{type_m}]")
-    for batch_id, (u, pi_ni) in pbar:
+    for batch_id, batch in pbar:
+        if type_m == 'group':
+            u, pi_ni, g_hist, g_mask = batch
+        else:
+            u, pi_ni = batch
+
         user_input = torch.LongTensor(u).to(running_device)
         pos_items_input, neg_items_input = pi_ni[:, 0].to(running_device), pi_ni[:, 1].to(running_device)
 
@@ -49,7 +54,8 @@ def training(train_loader, epoch, type_m="group", group_member_dict=None):
         else:
             # members = [torch.LongTensor(group_member_dict[group_id]).to(running_device) for group_id in list(u.cpu().numpy())]
             members = [torch.LongTensor(group_member_dict[group_id]).to(running_device) for group_id in u.tolist()]
-            loss, _ = train_model(user_input, None, pos_items_input, neg_items_input, members, 'train')
+            loss, _ = train_model(user_input, None, pos_items_input, neg_items_input, members, 'train',
+                                  group_history=g_hist.to(running_device), group_mask=g_mask.to(running_device))
 
         losses.append(loss)
         loss.backward()
@@ -159,7 +165,6 @@ if __name__ == "__main__":
         train_model = AlignGroup(num_users, num_items, num_groups, args, user_hg, item_hg,
                                full_hg, overlap_graph, running_device, cl_info, temp, item_embeddings=item_embeddings,
                                user_hist_mat=(dataset.user_hist_mat.to(running_device) if hasattr(dataset, "user_hist_mat") else None),
-                               group_recent_mat=(dataset.group_recent_mat.to(running_device) if hasattr(dataset, "group_recent_mat") else None),
                                group_texts=(dataset.group_texts if hasattr(dataset, "group_texts") else None),
                                bge_model_path=(args.bge_path if args.dataset == "facebook" else None))
         train_model.to(running_device)
@@ -174,7 +179,9 @@ if __name__ == "__main__":
 
             hits, ndcgs = evaluate(train_model, dataset.group_test_ratings, dataset.group_test_negatives,
                                    running_device,
-                                   args.topK, 'group')
+                                   args.topK, 'group',
+                                   group_hist=(dataset.group_hist_ids.to(running_device) if hasattr(dataset, "group_hist_ids") else None),
+                                   group_mask=(dataset.group_hist_mask.to(running_device) if hasattr(dataset, "group_hist_mask") else None))
 
             logging.info("[Epoch {}] Group, Hit@{}: {}, NDCG@{}: {}".format(epoch_id, args.topK, hits, args.topK, ndcgs))
 
@@ -255,10 +262,13 @@ if __name__ == "__main__":
             for i in range(0, num_items, chunk_size):
                 end = min(i + chunk_size, num_items)
                 items_chunk = all_items[i:end]
+                
                 batch_len = len(items_chunk)
                 
                 # Inputs need to be repeated to match batch size
                 g_input = torch.LongTensor([gid]).to(running_device).repeat(batch_len)
+                g_hist = dataset.group_hist_ids[gid].to(running_device).unsqueeze(0).repeat(batch_len, 1)
+                g_mask = dataset.group_hist_mask[gid].to(running_device).unsqueeze(0).repeat(batch_len, 1)
                 
                 # Members input is a list of tensors.
                 # The model expects a list of length batch_size.
@@ -281,7 +291,7 @@ if __name__ == "__main__":
                 # If not, that's great. If yes, it might crash.
                 # Let's assume it works like evaluate().
                 
-                _, chunk_scores = train_model(g_input, None, items_chunk, items_chunk, None, 'eval')
+                _, chunk_scores = train_model(g_input, None, items_chunk, items_chunk, None, 'eval', group_history=g_hist, group_mask=g_mask)
                 scores_list.append(chunk_scores.detach().cpu())
             
             all_scores = torch.cat(scores_list).squeeze()

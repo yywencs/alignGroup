@@ -59,11 +59,25 @@ class HyperGraphConvolution(nn.Module):
         return final_ui, final_g
 
 
+class DynamicGroupEncoder(nn.Module):
+    def __init__(self, emb_dim):
+        super(DynamicGroupEncoder, self).__init__()
+        self.attn = nn.Linear(emb_dim, 1)
+
+    def forward(self, item_emb, history_ids, history_mask):
+        hist_emb = item_emb[history_ids]
+        attn_logits = self.attn(hist_emb).squeeze(-1)
+        attn_logits = attn_logits.masked_fill(history_mask <= 0, -1e9)
+        attn = torch.softmax(attn_logits, dim=-1)
+        out = torch.sum(hist_emb * attn.unsqueeze(-1), dim=1)
+        return out
+
+
 class AlignGroup(nn.Module):
     """AlignGroup"""
     def __init__(self, num_users, num_items, num_groups, args, user_hyper_graph, item_hyper_graph,
                  full_hyper, overlap_graph, device, cl_info, temp, item_embeddings=None,
-                 user_hist_mat=None, group_recent_mat=None, group_texts=None, bge_model_path=None):
+                 user_hist_mat=None, group_texts=None, bge_model_path=None):
         super(AlignGroup, self).__init__()
 
         self.num_users = num_users
@@ -81,7 +95,6 @@ class AlignGroup(nn.Module):
 
         self.overlap_graph = overlap_graph
         self.user_hist_mat = user_hist_mat
-        self.group_recent_mat = group_recent_mat
         
         # Item Embedding setup
         self.pretrained_item_emb = None
@@ -99,7 +112,7 @@ class AlignGroup(nn.Module):
             nn.init.xavier_uniform_(self.user_embedding.weight)
 
         self.group_embedding = None
-        if self.group_recent_mat is None and group_texts is None:
+        if group_texts is None:
             self.group_embedding = nn.Embedding(num_groups, self.emb_dim)
             nn.init.xavier_uniform_(self.group_embedding.weight)
 
@@ -122,10 +135,11 @@ class AlignGroup(nn.Module):
 
         # Prediction Layer
         self.predict = PredictLayer(self.emb_dim)
+        self.dynamic_group_encoder = DynamicGroupEncoder(self.emb_dim)
 
-    def forward(self, group_inputs, user_inputs, pos_item_inputs, neg_item_inputs, members, mode):
+    def forward(self, group_inputs, user_inputs, pos_item_inputs, neg_item_inputs, members, mode, group_history=None, group_mask=None):
         if (group_inputs is not None) and (user_inputs is None):
-            return self.group_forward(group_inputs, pos_item_inputs, neg_item_inputs, members, mode)
+            return self.group_forward(group_inputs, pos_item_inputs, neg_item_inputs, members, mode, group_history, group_mask)
         else:
             return self.user_forward(user_inputs, pos_item_inputs, neg_item_inputs, members, mode)
 
@@ -165,49 +179,44 @@ class AlignGroup(nn.Module):
             return torch.sparse.mm(self.user_hist_mat, current_item_emb)
         return self.user_embedding.weight
 
-    def _get_group_base_embedding(self, current_item_emb):
+    def _get_group_base_embedding(self, group_inputs):
         static_emb = None
         if self.group_static_bge is not None and self.group_text_projection is not None:
             static_emb = self.group_text_projection(self.group_static_bge)
+            return static_emb[group_inputs]
 
-        dynamic_emb = None
-        if self.group_recent_mat is not None:
-            dynamic_emb = torch.sparse.mm(self.group_recent_mat, current_item_emb)
+        if self.group_embedding is not None:
+            return self.group_embedding(group_inputs)
 
-        if static_emb is not None and dynamic_emb is not None:
-            w = torch.sigmoid(self.group_static_weight)
-            return w * static_emb + (1.0 - w) * dynamic_emb
+        return torch.zeros((len(group_inputs), self.emb_dim), device=group_inputs.device)
 
-        if static_emb is not None:
-            return static_emb
-
-        if dynamic_emb is not None:
-            return dynamic_emb
-
-        return self.group_embedding.weight
-
-    def group_forward(self, group_inputs, pos_item_inputs, neg_item_inputs, members, mode):
+    def group_forward(self, group_inputs, pos_item_inputs, neg_item_inputs, members, mode, group_history, group_mask):
         current_item_emb = self.get_item_embedding()
         user_base = self._get_user_base_embedding(current_item_emb)
-        group_base = self._get_group_base_embedding(current_item_emb)
-        group_emb = torch.mm(self.overlap_graph, group_base)
+        group_emb_init = torch.zeros((self.num_groups, self.emb_dim), device=current_item_emb.device)
         
         # Member-level graph computation
         ui_emb, g_emb = self.hyper_graph_conv(user_base, current_item_emb,
-                                               group_emb, self.num_users, self.num_items)
+                                               group_emb_init, self.num_users, self.num_items)
         u_emb, i_emb = torch.split(ui_emb, [self.num_users, self.num_items])
 
         i_emb_pos = i_emb[pos_item_inputs]
         i_emb_neg = i_emb[neg_item_inputs]
-        g_emb = g_emb[group_inputs]
+        dynamic_g = self.dynamic_group_encoder(i_emb, group_history, group_mask)
+        static_g = self._get_group_base_embedding(group_inputs)
+        if self.group_static_weight is not None:
+            w = torch.sigmoid(self.group_static_weight)
+            g_use = w * static_g + (1.0 - w) * dynamic_g
+        else:
+            g_use = dynamic_g
         if mode == 'eval':
-            loss, pos_prediction = self.BPR_loss(g_emb, i_emb_pos, i_emb_neg)
+            loss, pos_prediction = self.BPR_loss(g_use, i_emb_pos, i_emb_neg)
             return loss, pos_prediction
         else:
             centers = self.get_centers(members, u_emb)
             # cl
-            cl_loss = self.InfoNCE(centers, g_emb, self.temp)
-            bpr_loss, pos_prediction = self.BPR_loss(g_emb, i_emb_pos, i_emb_neg)
+            cl_loss = self.InfoNCE(centers, g_use, self.temp)
+            bpr_loss, pos_prediction = self.BPR_loss(g_use, i_emb_pos, i_emb_neg)
             loss = bpr_loss + cl_loss * self.cl_weight
             return loss, pos_prediction
 

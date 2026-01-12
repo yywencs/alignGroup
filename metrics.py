@@ -19,7 +19,7 @@ def get_ndcg_k(pred_rank, k):
     return np.round(np.mean(ndcgs), decimals=5)
 
 
-def evaluate(model, test_ratings, test_negatives, device, k_list, type_m='group'):
+def evaluate(model, test_ratings, test_negatives, device, k_list, type_m='group', group_hist=None, group_mask=None):
     """Evaluate the performance (HitRatio, NDCG) of top-K recommendation"""
     model.eval()
     hits, ndcgs = [], []
@@ -43,7 +43,12 @@ def evaluate(model, test_ratings, test_negatives, device, k_list, type_m='group'
     items_var = items_var.view(-1)
 
     if type_m == 'group':
-        _, predictions = model(users_var, None, items_var, items_var, None, "eval")
+        hist = None
+        mask = None
+        if group_hist is not None and group_mask is not None:
+            hist = group_hist[users_var]
+            mask = group_mask[users_var]
+        _, predictions = model(users_var, None, items_var, items_var, None, "eval", group_history=hist, group_mask=mask)
     elif type_m == 'user':
         _, predictions = model(None, users_var, items_var, items_var, None, "eval")
 
