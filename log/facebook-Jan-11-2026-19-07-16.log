@@ -1,7 +1,0 @@
-INFO: = = = = = = = = = = = = = = = = = = = = 
-INFO: ('## Finishing Time:', '2026-01-11 19:07:16')
-INFO: Namespace(seed=0, dataset='facebook', device='cuda:0', layers=4, emb_dim=32, num_negatives=8, topK=[1, 5, 10], epoch=2, learning_rate=0.001, batch_size=128, patience=4, predictor='MLP', loss_type='BPR', temp=[0.2, 0.4, 0.6, 0.8], cl_weight=[0.001, 0.01, 0.1])
-INFO:  #Users 8814, #Items 369171, #Groups 30
-
-INFO: ██Dataset: 	facebook
-INFO: Idx = 1 / 12, cl_weight = 0.001, temp = 0.2: 

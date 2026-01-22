@@ -1,0 +1,13 @@
+INFO: = = = = = = = = = = = = = = = = = = = = 
+INFO: ('## Finishing Time:', '2026-01-17 10:39:49')
+INFO: Namespace(seed=0, dataset='facebook', device='cuda:1', bge_path='/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh', group_profile_path='', recent_k=50, layers=4, emb_dim=32, num_negatives=8, topK=[1, 5, 10], epoch=100, learning_rate=0.001, batch_size=256, patience=4, predictor='MLP', loss_type='BPR', temp=[0.8], cl_weight=[0.1])
+INFO:  #Users 8814, #Items 4921, #Groups 570
+
+INFO: ██Dataset: 	facebook
+INFO: Loading pretrained item embeddings from data/facebook/item_embeddings.npy
+INFO: Loaded embeddings with shape torch.Size([4921, 1024])
+INFO: Idx = 1 / 1, cl_weight = 0.1, temp = 0.8: 
+INFO: Epoch 0, group loss: 0.95902, Cost time: 381.04s
+INFO: Epoch 0, user loss: 0.47030, Cost time: 20.84s
+INFO: [Epoch 0] Group, Hit@[1, 5, 10]: [0.40526, 0.42164, 0.46667], NDCG@[1, 5, 10]: [0.40526, 0.41263, 0.42669]
+INFO: [Epoch 0] User, Hit@[1, 5, 10]: [0.17869, 0.4219, 0.5781], NDCG@[1, 5, 10]: [0.17869, 0.30238, 0.35293]

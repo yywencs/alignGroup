@@ -90,6 +90,7 @@ if __name__ == "__main__":
     parser.add_argument("--loss_type", type=str, default="BPR")
     parser.add_argument("--temp", nargs='+', type=float, default=[0.2, 0.4, 0.6, 0.8])
     parser.add_argument("--cl_weight", nargs='+', type=float, default=[0.001, 0.01, 0.1])
+    parser.add_argument("--checkpoint_dir", type=str, default="checkpoints", help="Directory to save model checkpoints")
 
 
 
@@ -169,6 +170,14 @@ if __name__ == "__main__":
                                bge_model_path=(args.bge_path if args.dataset == "facebook" else None))
         train_model.to(running_device)
 
+        # Track best metric for this parameter combination
+        best_group_ndcg = 0.0
+        best_epoch = -1
+        
+        # Ensure checkpoint directory exists
+        if not os.path.exists(args.checkpoint_dir):
+            os.makedirs(args.checkpoint_dir)
+
         for epoch_id in range(args.epoch):
             train_model.train()
             g_loader = dataset.get_group_dataloader(args.batch_size)
@@ -189,6 +198,18 @@ if __name__ == "__main__":
                                 args.topK, 'user')
 
             logging.info("[Epoch {}] User, Hit@{}: {}, NDCG@{}: {}".format(epoch_id, args.topK, hrs, args.topK, ngs))
+
+            # Save Best Model Logic
+            # Assuming args.topK is [1, 5, 10], we use NDCG@10 (index -1) for selection
+            current_ndcg = ndcgs[-1] 
+            if current_ndcg > best_group_ndcg:
+                best_group_ndcg = current_ndcg
+                best_epoch = epoch_id
+                
+                model_name = f"model_{args.dataset}_cl{cl_info}_temp{temp}.pth"
+                save_path = os.path.join(args.checkpoint_dir, model_name)
+                torch.save(train_model.state_dict(), save_path)
+                logging.info(f"New best model found at epoch {epoch_id} with Group NDCG@{args.topK[-1]}: {best_group_ndcg:.5f}. Saved to {save_path}")
 
             # tsne
             # g_rep, u_rep, i_rep = train_model.group_embedding.weight.clone(), train_model.user_embedding.weight.clone(), train_model.item_embedding.weight.clone()

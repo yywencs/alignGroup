@@ -29,6 +29,10 @@ class GroupDataset(object):
         self.num_groups, self.num_group_net_items = self.group_train_matrix.shape
         self.group_member_dict = load_group_member_to_dict(f"./data/{dataset}/groupMember.txt")
 
+        max_user_idx = self.num_users - 1
+        for gid, members in self.group_member_dict.items():
+            self.group_member_dict[gid] = [u for u in members if 0 <= u <= max_user_idx]
+
         print(f"GroupItem: {self.group_train_matrix.shape} with {len(self.group_train_matrix.keys())} interactions, spa"
               f"rsity: {(1-len(self.group_train_matrix.keys()) / self.num_groups / self.group_train_matrix.shape[1]):.5f}")
 

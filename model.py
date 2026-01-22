@@ -202,13 +202,16 @@ class AlignGroup(nn.Module):
 
         i_emb_pos = i_emb[pos_item_inputs]
         i_emb_neg = i_emb[neg_item_inputs]
-        dynamic_g = self.dynamic_group_encoder(i_emb, group_history, group_mask)
         static_g = self._get_group_base_embedding(group_inputs)
-        if self.group_static_weight is not None:
-            w = torch.sigmoid(self.group_static_weight)
-            g_use = w * static_g + (1.0 - w) * dynamic_g
+        if group_history is None or group_mask is None:
+            g_use = static_g
         else:
-            g_use = dynamic_g
+            dynamic_g = self.dynamic_group_encoder(i_emb, group_history, group_mask)
+            if self.group_static_weight is not None:
+                w = torch.sigmoid(self.group_static_weight)
+                g_use = w * static_g + (1.0 - w) * dynamic_g
+            else:
+                g_use = dynamic_g
         if mode == 'eval':
             loss, pos_prediction = self.BPR_loss(g_use, i_emb_pos, i_emb_neg)
             return loss, pos_prediction
