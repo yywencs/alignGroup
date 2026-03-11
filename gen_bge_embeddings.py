@@ -94,6 +94,6 @@ def generate_embeddings(data_dir, model_path, batch_size=128):
     print(f"Saved to {save_path}")
 
 if __name__ == "__main__":
-    data_dir = "data/facebook_chunk10"
+    data_dir = "data/facebook_50"
     model_path = "/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh"
     generate_embeddings(data_dir, model_path)

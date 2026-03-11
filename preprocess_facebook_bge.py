@@ -47,7 +47,19 @@ def is_valid_pos(flag):
         return True
     return False
 
-def extract_keywords_from_text(model_path, text, similarity_threshold=0.5, batch_size=32):
+def load_stopwords(filepath):
+    stopwords = set()
+    if os.path.exists(filepath):
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                word = line.strip()
+                if word:
+                    stopwords.add(word)
+    else:
+        print(f"Warning: Stopwords file not found at {filepath}")
+    return stopwords
+
+def extract_keywords_from_text(model_path, text, similarity_threshold=0.5, batch_size=32, stopwords=None):
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModel.from_pretrained(model_path)
     model.eval()
@@ -82,6 +94,8 @@ def extract_keywords_from_text(model_path, text, similarity_threshold=0.5, batch
     for w in words:
         token = w.word.strip()
         if len(token) < 2:
+            continue
+        if stopwords and token in stopwords:
             continue
         if not is_valid_pos(w.flag):
             continue
@@ -209,6 +223,21 @@ def preprocess(
         raw_data = raw_data[:limit]
         print(f"Limiting to first {limit} rows for testing.")
 
+    # Select Test Groups (3 groups)
+    all_group_names = list(set(row.get('Group Name', '').strip() for row in raw_data if row.get('Group Name', '').strip()))
+    all_group_names.sort()
+    if len(all_group_names) >= 3:
+        test_groups = set(random.sample(all_group_names, 3))
+    else:
+        test_groups = set(all_group_names)
+    print(f"Selected {len(test_groups)} test groups: {test_groups}")
+
+    # Load Stopwords
+    stopwords_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stopwords_baidu.txt')
+    print(f"Loading stopwords from {stopwords_path}...")
+    stopwords = load_stopwords(stopwords_path)
+    print(f"Loaded {len(stopwords)} stopwords.")
+
     print("Building POS-filtered vocabulary with global frequency statistics...")
     vocab_counter = Counter()
     for row in tqdm(raw_data, desc="Building vocab"):
@@ -221,6 +250,8 @@ def preprocess(
         for w in pseg.cut(content_clean):
             token = w.word.strip()
             if len(token) < 2:
+                continue
+            if token in stopwords:
                 continue
             if not is_valid_pos(w.flag):
                 continue
@@ -289,6 +320,8 @@ def preprocess(
             for w in words:
                 token = w.word.strip()
                 if len(token) < 2:
+                    continue
+                if token in stopwords:
                     continue
                 if not is_valid_pos(w.flag):
                     continue
@@ -407,22 +440,25 @@ def preprocess(
         ftest = open(test_file, 'w', encoding='utf-8')
         fneg = open(neg_file, 'w', encoding='utf-8')
         
-        all_items = list(item2id.values())
+        all_items_list = list(item2id.values())
+        num_all_items = len(all_items_list)
         
         for obj_id, items in interactions.items():
-            # Deduplicate while preserving order
-            items = list(dict.fromkeys(items)) 
+            # 去重并保持顺序
+            items_list = list(dict.fromkeys(items)) 
+            items_set = set(items_list) # 用于快速查询，避免负样本抽到正样本
             
-            if len(items) < 4: 
+            if len(items_list) < 4: 
                 continue 
             
             k_test = 3
             test_candidates = []
             train_items = []
             
-            idx = len(items) - 1
+            # 划分训练集和测试集 (Leave-Last-K)
+            idx = len(items_list) - 1
             while idx >= 0 and len(test_candidates) < k_test:
-                curr_item = items[idx]
+                curr_item = items_list[idx]
                 if curr_item in valid_test_items:
                     test_candidates.append(curr_item)
                 else:
@@ -430,32 +466,52 @@ def preprocess(
                 idx -= 1
             
             while idx >= 0:
-                train_items.append(items[idx])
+                train_items.append(items_list[idx])
                 idx -= 1
                 
-            train_items.reverse() # Restore order
-            test_candidates.reverse() # Restore order
+            train_items.reverse()
+            test_candidates.reverse()
             
-            if len(test_candidates) < k_test:
-                 pass
-
-            # Write Train
-            for ti in train_items:
-                ftrain.write(f'{obj_id} {ti} 1\n')
+            # 判断是否为测试组 (Inductive Split 逻辑)
+            is_test_group = False
+            if prefix == 'group':
+                v_name = id2group.get(obj_id, "")
+                orig_name = v_name.rsplit('__chunk', 1)[0]
+                if orig_name in test_groups:
+                    is_test_group = True
             
-            # Write Test & Negative
-            for target in test_candidates:
-                negs = []
-                while len(negs) < 100:
-                    n = random.randint(0, len(item2id)-1)
-                    if n not in items and n not in negs:
-                        negs.append(n)
+            # 修改后的辅助函数：增加负样本到 999
+            def write_test_neg(target_item):
+                negs = set()
+                # 核心修改：将 100 提升到 999
+                # 这样 Hit@1 就会下降，Hit@5/10 才会形成科学的梯度曲线
+                target_num_negs = 999 
                 
-                neg_str = ' '.join(map(str, negs))
-                # Test file: User Item
-                ftest.write(f'{obj_id} {target}\n')
-                # Negative file: (User, Item) Negs
-                fneg.write(f'({obj_id},{target}) {neg_str}\n')
+                while len(negs) < target_num_negs:
+                    n = random.randint(0, num_all_items - 1)
+                    # 负样本不能在当前用户/群组的所有交互历史中，也不能是当前的测试项
+                    if n not in items_set and n != target_item:
+                        negs.add(n)
+                
+                neg_str = ' '.join(map(str, list(negs)))
+                ftest.write(f'{obj_id} {target_item}\n')
+                fneg.write(f'({obj_id},{target_item}) {neg_str}\n')
+
+            if prefix == 'group':
+                if is_test_group:
+                    # 测试组：只写测试和负样本（Inductive测试）
+                    for target in test_candidates:
+                        write_test_neg(target)
+                else:
+                    # 训练组：所有交互进训练集
+                    for ti in items_list:
+                        ftrain.write(f'{obj_id} {ti} 1\n')
+            else:
+                # 用户：正常训练集 + 测试集
+                for ti in train_items:
+                    ftrain.write(f'{obj_id} {ti} 1\n')
+                for target in test_candidates:
+                    write_test_neg(target)
 
         ftrain.close()
         ftest.close()
@@ -467,12 +523,15 @@ def preprocess(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('data_dir', type=str, help='Data directory')
-    parser.add_argument('--similarity_threshold', type=float, default=0.5)
-    parser.add_argument('--virtual_group_window', type=int, default=50)
+    parser.add_argument('--similarity_threshold', type=float, default=0.5) # bge文本和帖子的相似度阈值
+    parser.add_argument('--virtual_group_window', type=int, default=50) # 多少个帖子划分为一个虚拟群组
     parser.add_argument('--max_vocab_size', type=int, default=5000)
     parser.add_argument('--limit', type=int, default=0, help='Limit number of rows for testing')
     args = parser.parse_args()
     
+    if not os.path.exists(args.data_dir):
+        os.makedirs(args.data_dir)
+
     model_path = "/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh"
     preprocess(
         args.data_dir,

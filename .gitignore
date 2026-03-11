@@ -13,4 +13,6 @@ __pycache__
 /.vscode
 .vscode
 
-/data/
+data/
+log/
+figs/

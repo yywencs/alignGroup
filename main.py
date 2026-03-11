@@ -119,7 +119,7 @@ if __name__ == "__main__":
     running_device = torch.device(args.device)
 
     # Load dataset
-    if args.dataset == 'facebook':
+    if args.dataset == 'facebook' or args.dataset.startswith('facebook'):
         if FacebookGroupDataset is None:
             raise ImportError("dataloader_facebook.py not found or failed to import.")
         group_profile_path = args.group_profile_path if args.group_profile_path else None
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     logging.info('██Dataset: \t' + args.dataset)
     
     item_embeddings = None
-    if args.dataset == 'facebook':
+    if args.dataset == 'facebook' or args.dataset.startswith('facebook'):
         emb_path = f'data/{args.dataset}/item_embeddings.npy'
         if os.path.exists(emb_path):
             logging.info(f"Loading pretrained item embeddings from {emb_path}")
@@ -167,7 +167,7 @@ if __name__ == "__main__":
                                full_hg, overlap_graph, running_device, cl_info, temp, item_embeddings=item_embeddings,
                                user_hist_mat=(dataset.user_hist_mat.to(running_device) if hasattr(dataset, "user_hist_mat") else None),
                                group_texts=(dataset.group_texts if hasattr(dataset, "group_texts") else None),
-                               bge_model_path=(args.bge_path if args.dataset == "facebook" else None))
+                               bge_model_path=(args.bge_path if (args.dataset == "facebook" or args.dataset.startswith('facebook')) else None))
         train_model.to(running_device)
 
         # Track best metric for this parameter combination
