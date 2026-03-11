@@ -1,0 +1,61 @@
+INFO: = = = = = = = = = = = = = = = = = = = = 
+INFO: ('## Finishing Time:', '2026-03-10 20:27:21')
+INFO: Namespace(seed=0, dataset='facebook_stopwords', device='cuda:0', bge_path='/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh', group_profile_path='', recent_k=200, layers=4, emb_dim=32, num_negatives=16, topK=[1, 5, 10], epoch=100, learning_rate=0.001, batch_size=512, patience=4, predictor='MLP', loss_type='BPR', temp=[0.2], cl_weight=[0.01], checkpoint_dir='./checkpoints/facebook_stopwords')
+INFO:  #Users 8814, #Items 1996, #Groups 1127
+
+INFO: ██Dataset: 	facebook_stopwords
+WARNING: Pretrained item embeddings not found at data/facebook_stopwords/item_embeddings.npy
+INFO: Idx = 1 / 1, cl_weight = 0.01, temp = 0.2: 
+INFO: Epoch 0, group loss: 0.50691, Cost time: 5736.76s
+INFO: Epoch 0, user loss: 0.45813, Cost time: 107.37s
+INFO: [Epoch 0] Group, Hit@[1, 5, 10]: [0.68313, 0.69136, 0.69136], NDCG@[1, 5, 10]: [0.68313, 0.68732, 0.68732]
+INFO: [Epoch 0] User, Hit@[1, 5, 10]: [0.17327, 0.43935, 0.60324], NDCG@[1, 5, 10]: [0.17327, 0.30846, 0.36133]
+INFO: New best model found at epoch 0 with Group NDCG@10: 0.68732. Saved to ./checkpoints/facebook_stopwords/model_facebook_stopwords_cl0.01_temp0.2.pth
+INFO: Epoch 1, group loss: 0.49131, Cost time: 6692.22s
+INFO: Epoch 1, user loss: 0.43120, Cost time: 235.13s
+INFO: [Epoch 1] Group, Hit@[1, 5, 10]: [0.58436, 0.58848, 0.60082], NDCG@[1, 5, 10]: [0.58436, 0.58613, 0.58992]
+INFO: [Epoch 1] User, Hit@[1, 5, 10]: [0.17752, 0.41723, 0.58425], NDCG@[1, 5, 10]: [0.17752, 0.29865, 0.35259]
+INFO: Epoch 2, group loss: 0.48749, Cost time: 3422.67s
+INFO: Epoch 2, user loss: 0.41870, Cost time: 244.33s
+INFO: [Epoch 2] Group, Hit@[1, 5, 10]: [0.49794, 0.49794, 0.53909], NDCG@[1, 5, 10]: [0.49794, 0.49794, 0.51049]
+INFO: [Epoch 2] User, Hit@[1, 5, 10]: [0.19563, 0.41274, 0.57245], NDCG@[1, 5, 10]: [0.19563, 0.30407, 0.3556]
+INFO: Epoch 3, group loss: 0.48547, Cost time: 3463.46s
+INFO: Epoch 3, user loss: 0.41091, Cost time: 201.38s
+INFO: [Epoch 3] Group, Hit@[1, 5, 10]: [0.46502, 0.48971, 0.53498], NDCG@[1, 5, 10]: [0.46502, 0.47586, 0.49041]
+INFO: [Epoch 3] User, Hit@[1, 5, 10]: [0.2131, 0.41221, 0.56702], NDCG@[1, 5, 10]: [0.2131, 0.31205, 0.36188]
+INFO: Epoch 4, group loss: 0.48417, Cost time: 3491.18s
+INFO: Epoch 4, user loss: 0.40589, Cost time: 224.90s
+INFO: [Epoch 4] Group, Hit@[1, 5, 10]: [0.44033, 0.46091, 0.53086], NDCG@[1, 5, 10]: [0.44033, 0.44994, 0.47232]
+INFO: [Epoch 4] User, Hit@[1, 5, 10]: [0.22142, 0.40867, 0.55917], NDCG@[1, 5, 10]: [0.22142, 0.3143, 0.36282]
+INFO: Epoch 5, group loss: 0.48290, Cost time: 3465.59s
+INFO: Epoch 5, user loss: 0.40241, Cost time: 204.22s
+INFO: [Epoch 5] Group, Hit@[1, 5, 10]: [0.44444, 0.45267, 0.52675], NDCG@[1, 5, 10]: [0.44444, 0.44781, 0.47137]
+INFO: [Epoch 5] User, Hit@[1, 5, 10]: [0.23764, 0.41274, 0.55917], NDCG@[1, 5, 10]: [0.23764, 0.32404, 0.37112]
+INFO: Epoch 6, group loss: 0.48177, Cost time: 3513.76s
+INFO: Epoch 6, user loss: 0.39983, Cost time: 207.14s
+INFO: [Epoch 6] Group, Hit@[1, 5, 10]: [0.38272, 0.41975, 0.50617], NDCG@[1, 5, 10]: [0.38272, 0.39906, 0.42626]
+INFO: [Epoch 6] User, Hit@[1, 5, 10]: [0.25811, 0.41528, 0.55811], NDCG@[1, 5, 10]: [0.25811, 0.33548, 0.38149]
+INFO: Epoch 7, group loss: 0.48104, Cost time: 3314.57s
+INFO: Epoch 7, user loss: 0.39761, Cost time: 229.84s
+INFO: [Epoch 7] Group, Hit@[1, 5, 10]: [0.40329, 0.42798, 0.50617], NDCG@[1, 5, 10]: [0.40329, 0.41349, 0.438]
+INFO: [Epoch 7] User, Hit@[1, 5, 10]: [0.27381, 0.41982, 0.55882], NDCG@[1, 5, 10]: [0.27381, 0.34521, 0.38994]
+INFO: Epoch 8, group loss: 0.48026, Cost time: 3349.05s
+INFO: Epoch 8, user loss: 0.39600, Cost time: 244.01s
+INFO: [Epoch 8] Group, Hit@[1, 5, 10]: [0.41564, 0.42798, 0.51852], NDCG@[1, 5, 10]: [0.41564, 0.42124, 0.44886]
+INFO: [Epoch 8] User, Hit@[1, 5, 10]: [0.29912, 0.42714, 0.56136], NDCG@[1, 5, 10]: [0.29912, 0.36108, 0.40427]
+INFO: Epoch 9, group loss: 0.47987, Cost time: 5467.05s
+INFO: Epoch 9, user loss: 0.39485, Cost time: 231.45s
+INFO: [Epoch 9] Group, Hit@[1, 5, 10]: [0.39095, 0.40741, 0.49794], NDCG@[1, 5, 10]: [0.39095, 0.39749, 0.42548]
+INFO: [Epoch 9] User, Hit@[1, 5, 10]: [0.31062, 0.42891, 0.56083], NDCG@[1, 5, 10]: [0.31062, 0.36721, 0.40956]
+INFO: Epoch 10, group loss: 0.47852, Cost time: 3366.44s
+INFO: Epoch 10, user loss: 0.39322, Cost time: 68.57s
+INFO: [Epoch 10] Group, Hit@[1, 5, 10]: [0.39918, 0.41152, 0.4856], NDCG@[1, 5, 10]: [0.39918, 0.40431, 0.42697]
+INFO: [Epoch 10] User, Hit@[1, 5, 10]: [0.3246, 0.4318, 0.56059], NDCG@[1, 5, 10]: [0.3246, 0.37532, 0.41673]
+INFO: Epoch 11, group loss: 0.47824, Cost time: 1175.37s
+INFO: Epoch 11, user loss: 0.39226, Cost time: 26.53s
+INFO: [Epoch 11] Group, Hit@[1, 5, 10]: [0.36626, 0.39095, 0.48971], NDCG@[1, 5, 10]: [0.36626, 0.37653, 0.40745]
+INFO: [Epoch 11] User, Hit@[1, 5, 10]: [0.3459, 0.44059, 0.56189], NDCG@[1, 5, 10]: [0.3459, 0.39074, 0.42965]
+INFO: Epoch 12, group loss: 0.47781, Cost time: 1082.00s
+INFO: Epoch 12, user loss: 0.39132, Cost time: 26.26s
+INFO: [Epoch 12] Group, Hit@[1, 5, 10]: [0.34156, 0.3786, 0.46914], NDCG@[1, 5, 10]: [0.34156, 0.3569, 0.38556]
+INFO: [Epoch 12] User, Hit@[1, 5, 10]: [0.35959, 0.44407, 0.55988], NDCG@[1, 5, 10]: [0.35959, 0.39917, 0.43626]
