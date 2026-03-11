@@ -1,0 +1,8 @@
+INFO: = = = = = = = = = = = = = = = = = = = = 
+INFO: ('## Finishing Time:', '2026-03-10 19:08:03')
+INFO: Namespace(seed=0, dataset='facebook_stopwords', device='cuda:0', bge_path='/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh', group_profile_path='', recent_k=200, layers=4, emb_dim=32, num_negatives=100, topK=[1, 5, 10], epoch=100, learning_rate=0.001, batch_size=512, patience=4, predictor='MLP', loss_type='BPR', temp=[0.2], cl_weight=[0.01], checkpoint_dir='./checkpoints/facebook_stopwords')
+INFO:  #Users 8814, #Items 1996, #Groups 1127
+
+INFO: ██Dataset: 	facebook_stopwords
+WARNING: Pretrained item embeddings not found at data/facebook_stopwords/item_embeddings.npy
+INFO: Idx = 1 / 1, cl_weight = 0.01, temp = 0.2: 

@@ -1,0 +1,13 @@
+INFO: = = = = = = = = = = = = = = = = = = = = 
+INFO: ('## Finishing Time:', '2026-03-10 19:11:36')
+INFO: Namespace(seed=0, dataset='facebook_stopwords', device='cuda:0', bge_path='/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh', group_profile_path='', recent_k=200, layers=4, emb_dim=32, num_negatives=16, topK=[1, 5, 10], epoch=100, learning_rate=0.001, batch_size=512, patience=4, predictor='MLP', loss_type='BPR', temp=[0.2], cl_weight=[0.01], checkpoint_dir='./checkpoints/facebook_stopwords')
+INFO:  #Users 8814, #Items 1996, #Groups 1127
+
+INFO: ██Dataset: 	facebook_stopwords
+WARNING: Pretrained item embeddings not found at data/facebook_stopwords/item_embeddings.npy
+INFO: Idx = 1 / 1, cl_weight = 0.01, temp = 0.2: 
+INFO: Epoch 0, group loss: 0.50690, Cost time: 3294.56s
+INFO: Epoch 0, user loss: 0.45811, Cost time: 33.85s
+INFO: [Epoch 0] Group, Hit@[1, 5, 10]: [0.68313, 0.69547, 0.69547], NDCG@[1, 5, 10]: [0.68313, 0.68909, 0.68909]
+INFO: [Epoch 0] User, Hit@[1, 5, 10]: [0.17327, 0.43959, 0.60307], NDCG@[1, 5, 10]: [0.17327, 0.30866, 0.3614]
+INFO: New best model found at epoch 0 with Group NDCG@10: 0.68909. Saved to ./checkpoints/facebook_stopwords/model_facebook_stopwords_cl0.01_temp0.2.pth
