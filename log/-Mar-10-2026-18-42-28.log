@@ -1,3 +1,0 @@
-INFO: = = = = = = = = = = = = = = = = = = = = 
-INFO: ('## Finishing Time:', '2026-03-10 18:42:28')
-INFO: Namespace(seed=0, dataset='', device='cuda:0', bge_path='/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh', group_profile_path='', recent_k=200, layers=4, emb_dim=32, num_negatives=8, topK=[1, 5, 10], epoch=100, learning_rate=0.001, batch_size=512, patience=4, predictor='MLP', loss_type='BPR', temp=[0.2], cl_weight=[0.01], checkpoint_dir='')
