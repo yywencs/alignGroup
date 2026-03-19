@@ -168,6 +168,7 @@ def preprocess(
     limit=0,
     virtual_group_window=50,
     max_vocab_size=5000,
+    stats_only=False,
 ):
     print("Processing Facebook dataset with BGE-based keyword extraction...")
     csv_path = os.path.join("/home/yangyw/code/my_code/rz/AlignGroup/data", "data_merged.csv")
@@ -240,6 +241,11 @@ def preprocess(
 
     print("Building POS-filtered vocabulary with global frequency statistics...")
     vocab_counter = Counter()
+    vocab_tokens_total = 0
+    vocab_filtered_short = 0
+    vocab_filtered_stopwords = 0
+    vocab_filtered_pos = 0
+    vocab_kept = 0
     for row in tqdm(raw_data, desc="Building vocab"):
         content = row.get("Post Content", "")
         content = content.strip()
@@ -248,13 +254,18 @@ def preprocess(
         content_clean = re.sub(r'http\S+', '', content)
         content_clean = re.sub(r'[^\w\s\u4e00-\u9fff]', ' ', content_clean)
         for w in pseg.cut(content_clean):
+            vocab_tokens_total += 1
             token = w.word.strip()
             if len(token) < 2:
+                vocab_filtered_short += 1
                 continue
             if token in stopwords:
+                vocab_filtered_stopwords += 1
                 continue
             if not is_valid_pos(w.flag):
+                vocab_filtered_pos += 1
                 continue
+            vocab_kept += 1
             vocab_counter[token] += 1
 
     if max_vocab_size is not None and max_vocab_size > 0:
@@ -264,9 +275,28 @@ def preprocess(
     vocab_tokens = [w for w, _ in most_common]
     vocab_set = set(vocab_tokens)
     print(f"Vocab size after POS filtering and top-{max_vocab_size}: {len(vocab_tokens)}")
+    print(
+        "Vocab统计 | "
+        f"分词总数={vocab_tokens_total}, "
+        f"长度过滤={vocab_filtered_short}, "
+        f"停用词过滤={vocab_filtered_stopwords}, "
+        f"词性过滤={vocab_filtered_pos}, "
+        f"保留={vocab_kept}"
+    )
 
     word_embedding_cache = {}
     group_post_counts = {}
+    process_posts_total = 0
+    process_posts_skipped_empty = 0
+    process_tokens_total = 0
+    process_filtered_short = 0
+    process_filtered_stopwords = 0
+    process_filtered_pos = 0
+    process_filtered_vocab = 0
+    process_candidates_kept = 0
+    process_unique_candidates = 0
+    process_bge_kept = 0
+    process_bge_filtered = 0
 
     user_hist_path = os.path.join(data_dir, 'user_keyword_interactions.txt')
     group_hist_path = os.path.join(data_dir, 'group_keyword_interactions.txt')
@@ -288,11 +318,13 @@ def preprocess(
     with open(user_hist_path, 'w', encoding='utf-8') as user_hist_file, \
          open(group_hist_path, 'w', encoding='utf-8') as group_hist_file:
         for row in tqdm(raw_data, desc="Processing Posts"):
+            process_posts_total += 1
             orig_g_name = row['Group Name'].strip()
             u_name = row['User Name'].strip()
             content = row['Post Content'].strip()
             
             if not orig_g_name or not u_name or not content:
+                process_posts_skipped_empty += 1
                 continue
 
             prev_count = group_post_counts.get(orig_g_name, 0)
@@ -318,21 +350,28 @@ def preprocess(
             words = list(pseg.cut(content_clean))
             candidates = []
             for w in words:
+                process_tokens_total += 1
                 token = w.word.strip()
                 if len(token) < 2:
+                    process_filtered_short += 1
                     continue
                 if token in stopwords:
+                    process_filtered_stopwords += 1
                     continue
                 if not is_valid_pos(w.flag):
+                    process_filtered_pos += 1
                     continue
                 if vocab_set and token not in vocab_set:
+                    process_filtered_vocab += 1
                     continue
                 candidates.append(token)
+            process_candidates_kept += len(candidates)
                 
             if not candidates:
                 continue
                 
             unique_candidates = list(set(candidates))
+            process_unique_candidates += len(unique_candidates)
             
             new_words = [w for w in unique_candidates if w not in word_embedding_cache]
             
@@ -352,6 +391,8 @@ def preprocess(
                 sim = similarities[i].item()
                 if sim >= similarity_threshold:
                     valid_words.append(w)
+            process_bge_kept += len(valid_words)
+            process_bge_filtered += len(unique_candidates) - len(valid_words)
             
             for w in valid_words:
                 if w not in item2id:
@@ -366,6 +407,22 @@ def preprocess(
     print(f"Users: {len(user2id)}")
     print(f"Groups: {len(group2id)}")
     print(f"Items (Keywords): {len(item2id)}")
+    print(
+        "Processing统计 | "
+        f"帖子总数={process_posts_total}, "
+        f"空字段跳过={process_posts_skipped_empty}, "
+        f"分词总数={process_tokens_total}, "
+        f"长度过滤={process_filtered_short}, "
+        f"停用词过滤={process_filtered_stopwords}, "
+        f"词性过滤={process_filtered_pos}, "
+        f"词表过滤={process_filtered_vocab}, "
+        f"候选保留(含重复)={process_candidates_kept}, "
+        f"候选保留(去重)={process_unique_candidates}, "
+        f"BGE过滤={process_bge_filtered}, "
+        f"BGE保留={process_bge_kept}"
+    )
+    if stats_only:
+        return
 
     def load_interactions(path):
         interactions = {}
@@ -390,20 +447,27 @@ def preprocess(
     id2item = {v: k for k, v in item2id.items()}
     id2group = {v: k for k, v in group2id.items()}
     from collections import Counter as C2
+    max_group_keyword_samples = 20
+    max_keywords_per_group = 20
     print("Sample keywords for each group:")
+    printed_groups = 0
     for gid in range(len(group2id)):
+        if printed_groups >= max_group_keyword_samples:
+            break
         items = group_interactions.get(gid, [])
         if not items:
             continue
         freq = C2(items)
         top_words = []
-        for iid, c in freq.most_common(20):
+        for iid, c in freq.most_common(max_keywords_per_group):
             token = id2item.get(iid, "")
             if token:
                 top_words.append(f"{token}({c})")
         group_name = id2group.get(gid, "")
         print(f"GID {gid}\t{group_name}")
         print("  keywords:", ", ".join(top_words))
+        printed_groups += 1
+    print(f"Printed keyword samples for {printed_groups} groups (limit={max_group_keyword_samples})")
 
     valid_test_items = set([iid for iid, c in item_counts.items() if c >= 5])
     print(f"Valid Test Items (Count >= 5): {len(valid_test_items)}")
@@ -485,7 +549,7 @@ def preprocess(
                 negs = set()
                 # 核心修改：将 100 提升到 999
                 # 这样 Hit@1 就会下降，Hit@5/10 才会形成科学的梯度曲线
-                target_num_negs = 999 
+                target_num_negs = 200 
                 
                 while len(negs) < target_num_negs:
                     n = random.randint(0, num_all_items - 1)
@@ -527,6 +591,7 @@ if __name__ == "__main__":
     parser.add_argument('--virtual_group_window', type=int, default=50) # 多少个帖子划分为一个虚拟群组
     parser.add_argument('--max_vocab_size', type=int, default=5000)
     parser.add_argument('--limit', type=int, default=0, help='Limit number of rows for testing')
+    parser.add_argument('--stats_only', action='store_true')
     args = parser.parse_args()
     
     if not os.path.exists(args.data_dir):
@@ -540,4 +605,5 @@ if __name__ == "__main__":
         limit=args.limit,
         virtual_group_window=args.virtual_group_window,
         max_vocab_size=args.max_vocab_size,
+        stats_only=args.stats_only,
     )

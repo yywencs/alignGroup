@@ -3,7 +3,7 @@
 DATASET="facebook_stopwords"
 CHECKPOINT_DIR="./checkpoints/${DATASET}"
 
-CUDA_VISIBLE_DEVICE=0 python main.py \
+CUDA_VISIBLE_DEVICES=4 python main.py \
     --dataset "$DATASET" \
     --learning_rate 0.001 \
     --cl_weight 0.01 \
@@ -15,4 +15,4 @@ CUDA_VISIBLE_DEVICE=0 python main.py \
     --num_negatives 8 \
     --checkpoint_dir "$CHECKPOINT_DIR" \
     --patience 4 \
-    --num_negatives 16
+    --num_negatives 8

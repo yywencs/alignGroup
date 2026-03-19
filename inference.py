@@ -1,6 +1,7 @@
 import jieba
 import jieba.posseg as pseg
 import re
+import requests
 from transformers import AutoTokenizer, AutoModel
 import torch
 import torch.nn as nn
@@ -14,6 +15,7 @@ from collections import defaultdict
 from tqdm import tqdm
 from model import AlignGroup
 from dataloader_facebook import FacebookGroupDataset
+from metrics import get_hit_k, get_ndcg_k
 
 VALID_POS = {
     "n", "nr", "ns", "nt", "nz",
@@ -30,6 +32,34 @@ def is_valid_pos(flag):
     if flag[0] in {"n", "v", "a"}:
         return True
     return False
+
+def generate_sentence_with_ollama(words, group_name):
+    url = "http://localhost:11434/api/generate"
+    model = "qwen3:32b"
+    # prompt = f"这是一个群组常聊的十个词，请用这些关键词写一个通顺的句子表明群组经常在讨论什么，大概只有一半的词是准确的，可以过滤一些不对的词，要求句子自然、流畅，只要一句话：{', '.join(words)}"
+    prompt = f"群组 {group_name} 常聊的十个词是：{', '.join(words)}。请用这些关键词写一个通顺的句子表明群组经常在讨论什么，大概只有一半的词是准确的，可以过滤一些不对的词，要求句子自然、流畅，只要一句话。"
+    
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False
+    }
+    
+    try:
+        # print(f"Calling Ollama ({model})...")
+        response = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=60)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if "response" in result:
+                return result["response"].strip()
+            else:
+                return f"Error: No 'response' field in JSON. Keys: {list(result.keys())}"
+        else:
+            return f"Error: API returned status {response.status_code} - {response.text}"
+            
+    except Exception as e:
+        return f"Exception calling Ollama: {str(e)}"
 
 def load_id_map(file_path):
     id2name = {}
@@ -117,11 +147,6 @@ def inference(args):
     model.to(device)
     model.eval()
 
-    # 6. Inference Loop
-    # To speed up, we can batch process, but simple loop is fine for demonstration
-    # We need to compute 'i_emb' (Contextual Item Embedding) from HyperGraphConv first.
-    # Since HyperGraphConv depends on user_emb, item_emb, group_emb_init (zeros), 
-    # and these don't change per query, we can precompute them once.
     
     print("Precomputing static graph embeddings...")
     with torch.no_grad():
@@ -272,6 +297,12 @@ def inference(args):
         
         print(f"\nConsensus Prediction for {new_group_name}:")
         print(f"Top-10 Consensus: {', '.join(top_words)}")
+        
+        print("\n--- Generating Sentence via LLM ---")
+        sentence = generate_sentence_with_ollama(top_words, new_group_name)
+        print(f"LLM Output:\n{sentence}")
+        print("-" * 30)
+        
         return
 
     # 4. Load Group History (Full Interactions)
@@ -291,6 +322,26 @@ def inference(args):
                 test_cases.append((gid, target_iid))
     
     print(f"Total test cases: {len(test_cases)}")
+    
+    # 5.1 Load Negative Samples for Metrics Calculation
+    neg_file = os.path.join(data_dir, "groupRatingNegative.txt")
+    print(f"Loading negative samples from {neg_file}")
+    neg_samples = {}
+    with open(neg_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Format: (gid,target_iid) neg1 neg2 ...
+            try:
+                key_part, neg_part = line.split(') ', 1)
+                key_part = key_part.strip('(')
+                gid_str, iid_str = key_part.split(',')
+                gid, target_iid = int(gid_str), int(iid_str)
+                negs = [int(x) for x in neg_part.split()]
+                neg_samples[(gid, target_iid)] = negs
+            except ValueError:
+                continue
 
     results = []
     
@@ -301,6 +352,9 @@ def inference(args):
         test_groups[gid].append(target)
         
     print(f"Unique groups in test set: {len(test_groups)}")
+    
+    all_ranks = []
+    k_list = [10]
 
     with torch.no_grad():
         for gid, targets in tqdm(test_groups.items(), desc="Inferring"):
@@ -372,15 +426,57 @@ def inference(args):
             for target in targets:
                 target_word = item_map.get(target, f"Item_{target}")
                 
-                top_words = [item_map.get(idx, f"Item_{idx}") for idx in topk_indices]
+                # Metrics Calculation logic
+                # Need negative samples for this (gid, target) pair
+                if (gid, target) in neg_samples:
+                    negs = neg_samples[(gid, target)]
+                    # Create candidate list: [target, neg1, neg2, ...]
+                    eval_items = [target] + negs
+                    eval_scores = scores[eval_items].cpu().numpy()
+                    
+                    # Rank: sort descending
+                    # target is at index 0
+                    # We want the rank of index 0
+                    sorted_indices = np.argsort(-eval_scores)
+                    rank = np.where(sorted_indices == 0)[0][0] # rank is 0-based index
+                    
+                    # Prepare pred_rank format for metrics.py: 
+                    # metrics.py expects pred_rank where 0 is the target index.
+                    # Since we only have one target per test case here, we can just append a row 
+                    # where the value at the rank-th position is 0 (target) and others are > 0.
+                    # Actually, get_hit_k takes pred_rank matrix where each row is the sorted indices of items?
+                    # Let's check metrics.py:
+                    # pred_rank = np.argsort(pred_score * -1, axis=1)
+                    # hit = np.count_nonzero(pred_rank_k == 0) 
+                    # This implies target index is 0 in the input score matrix.
+                    # Yes, evaluate function puts target at index 0.
+                    # So sorted_indices contains the indices of items in eval_items.
+                    # If target (index 0) is in top k of sorted_indices, it's a hit.
+                    
+                    # Store sorted_indices for later batch metric calculation or calculate now
+                    all_ranks.append(sorted_indices)
                 
-                print(f"\nGroup: {group_name} (ID: {gid})")
-                print(f"Target Truth: {target_word}")
-                print(f"Top-10 Consensus: {', '.join(top_words)}")
-                if target in topk_indices:
-                    print(f"Result: HIT")
-                else:
-                    print(f"Result: MISS")
+                if args.show_top10:
+                    top_words = [item_map.get(idx, f"Item_{idx}") for idx in topk_indices]
+                    
+                    print(f"\nGroup: {group_name} (ID: {gid})")
+                    print(f"Target Truth: {target_word}")
+                    print(f"Top-10 Consensus: {', '.join(top_words)}")
+    
+    # Calculate overall metrics
+    if all_ranks:
+        all_ranks = np.array(all_ranks)
+        print("\n" + "="*30)
+        print("Evaluation Metrics:")
+        print("="*30)
+        for k in k_list:
+            hit = get_hit_k(all_ranks, k)
+            ndcg = get_ndcg_k(all_ranks, k)
+            print(f"HR@{k}: {hit:.4f}")
+            print(f"NDCG@{k}: {ndcg:.4f}")
+        print("="*30)
+    else:
+        print("\nNo negative samples found for metrics calculation.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -394,6 +490,7 @@ if __name__ == "__main__":
     parser.add_argument("--group_profile_path", type=str, default="")
     parser.add_argument("--bge_path", type=str, default="/mnt/c1a908c8-4782-4898-8be7-c6be59a325d6/yyw/checkpoint/bge-large-zh")
     parser.add_argument("--json_input", type=str, help="Path to JSON file with group info for inference")
+    parser.add_argument("--show_top10", action="store_true", help="Show Top-10 consensus prediction for each test case")
     
     # Dummy args for model init
     parser.add_argument("--num_negatives", type=int, default=1)
